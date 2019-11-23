@@ -1,8 +1,14 @@
 from __future__ import print_function
+import tensorflow as tf
 import input_data
 import os
 import neat
 import visualize
+import statistics
+import numpy as np
+from PIL import Image
+import matplotlib.pyplot as plt
+from keras.utils import to_categorical
 
 images = []
 labels = []
@@ -10,20 +16,41 @@ labels = []
 def initialize_in_out():
     '''load images and their respective expected output (may want to perform convolution with keras,
 but that may not be neccesary)'''
-    data = input_data.read_data_sets("MNIST_data/", one_hot=True)
-    print(data.train.images)
-    images = data.train.images
-    labels = data.train.labels
+    global images
+    global labels
+    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+    #print(data.train.images)
+    x_train[0]
 
+    #print((np.array(images[0]).reshape((28, 28), order='A')*255).astype(int))
+    im = Image.fromarray(x_train[0])
+    im.save("yeeter.png")
+
+    onehot_encoded = to_categorical(y_train)
+
+    images = x_train
+    labels = onehot_encoded
 
 def eval_genomes(genomes, config):
     '''fitness function used in the neat algorithm'''
+    global images
+    global labels
+    num_pics = 30
     for genome_id, genome in genomes:
-        genome.fitness = 9.0
         net = neat.nn.FeedForwardNetwork.create(genome, config)
+        print ("yoink"+str(genome_id))
+        counter = 0
+        fitnesses = []
         for image, label in zip(images, labels):
-            output = net.activate(image)
-            genome.fitness -= (output[0] - label[0]) ** 2
+            if(counter < num_pics):
+                temp = 10.0
+                output = net.activate(image.reshape(784))
+                for i in range(10):
+                    #print(str(label[i]) + " " + str(output[i])+" + " +str(abs(label[i]-output[i])**2))
+                    temp -= abs(label[i]-output[i])**2
+                fitnesses.append(temp)
+            counter += 1
+        genome.fitness = statistics.mean(fitnesses)
 
 def run(config_file):
     # Load configuration.
@@ -41,7 +68,7 @@ def run(config_file):
     p.add_reporter(neat.Checkpointer(5))
 
     # Run for up to 300 generations.
-    winner = p.run(eval_genomes, 300)
+    winner = p.run(eval_genomes, 15)
 
     # Display the winning genome.
     print('\nBest genome:\n{!s}'.format(winner))
@@ -49,9 +76,12 @@ def run(config_file):
     # Show output of the most fit genome against training data.
     print('\nOutput:')
     winner_net = neat.nn.FeedForwardNetwork.create(winner, config)
+    count = 0
     for image, label in zip(images, labels):
-        output = winner_net.activate(image)
-        print("input {!r}, expected output {!r}, got {!r}".format(image, label, output))
+        if(count < 30):
+            output = winner_net.activate(image.reshape(784))
+            print("expected output {!r}, got {!r}".format(np.argmax(label), np.argmax(output)))
+            count+=1;
 
     node_names = {-1:'A', -2: 'B', 0:'A XOR B'}
     visualize.draw_net(config, winner, True, node_names=node_names)
