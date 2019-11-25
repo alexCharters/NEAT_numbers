@@ -12,6 +12,8 @@ from keras.utils import to_categorical
 
 images = []
 labels = []
+last_genome = None
+
 
 def initialize_in_out():
     '''load images and their respective expected output (may want to perform convolution with keras,
@@ -19,8 +21,9 @@ but that may not be neccesary)'''
     global images
     global labels
     (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
-    #print(data.train.images)
-    x_train[0]
+    # print(data.train.images)
+    print(x_train[0]/255)
+
 
     #print((np.array(images[0]).reshape((28, 28), order='A')*255).astype(int))
     im = Image.fromarray(x_train[0])
@@ -28,29 +31,40 @@ but that may not be neccesary)'''
 
     onehot_encoded = to_categorical(y_train)
 
-    images = x_train
+    images = x_train/255
     labels = onehot_encoded
 
-def eval_genomes(genomes, config):
+
+def eval_genome(genome, config):
     '''fitness function used in the neat algorithm'''
     global images
     global labels
-    num_pics = 30
-    for genome_id, genome in genomes:
-        net = neat.nn.FeedForwardNetwork.create(genome, config)
-        print ("yoink"+str(genome_id))
-        counter = 0
-        fitnesses = []
-        for image, label in zip(images, labels):
-            if(counter < num_pics):
-                temp = 10.0
-                output = net.activate(image.reshape(784))
-                for i in range(10):
-                    #print(str(label[i]) + " " + str(output[i])+" + " +str(abs(label[i]-output[i])**2))
-                    temp -= abs(label[i]-output[i])**2
-                fitnesses.append(temp)
-            counter += 1
-        genome.fitness = statistics.mean(fitnesses)
+    global last_genome
+    num_pics = 300
+    net = neat.nn.FeedForwardNetwork.create(genome, config)
+    # if(last_genome is not None):
+    #     print(genome.distance(last_genome, config.genome_config))
+    counter = 0
+    errors = []
+    for image, label in zip(images, labels):
+        if(counter < num_pics):
+            temp = 10
+            one_count = 0
+            output = net.activate(image.reshape(784))
+            for i in range(10):
+                #print(str(label[i]) + " " + str(output[i])+" + " +str(abs(label[i]-output[i])**2))
+                temp -= abs(label[i]-output[i])**2
+                if(output[i] > .95):
+                    one_count += 1
+                if(label[i] == 1 and output[i] < .1):
+                    temp -= 3
+            if(one_count > 1):
+                temp = 0
+            errors.append(temp)
+        counter += 1
+    last_genome = genome
+    return statistics.mean(errors)
+
 
 def run(config_file):
     # Load configuration.
@@ -68,10 +82,12 @@ def run(config_file):
     p.add_reporter(neat.Checkpointer(5))
 
     # Run for up to 300 generations.
-    winner = p.run(eval_genomes, 15)
+    pe = neat.ThreadedEvaluator(100, eval_genome)
+    winner = p.run(pe.evaluate, 100)
+    pe.stop()
 
     # Display the winning genome.
-    print('\nBest genome:\n{!s}'.format(winner))
+    # print('\nBest genome:\n{!s}'.format(winner))
 
     # Show output of the most fit genome against training data.
     print('\nOutput:')
@@ -81,21 +97,23 @@ def run(config_file):
         if(count < 30):
             output = winner_net.activate(image.reshape(784))
             print("expected output {!r}, got {!r}".format(np.argmax(label), np.argmax(output)))
-            count+=1;
+            count += 1
 
-    node_names = {-1:'A', -2: 'B', 0:'A XOR B'}
+    node_names = {0: 'A XOR B'}
     visualize.draw_net(config, winner, True, node_names=node_names)
     visualize.plot_stats(stats, ylog=False, view=True)
     visualize.plot_species(stats, view=True)
 
     p = neat.Checkpointer.restore_checkpoint('neat-checkpoint-4')
-    p.run(eval_genomes, 10)
+    pe = neat.ThreadedEvaluator(4, eval_genome)
+    winner = p.run(pe.evaluate, 10)
+    pe.stop()
+
 
 if __name__ == '__main__':
     # Determine path to configuration file. This path manipulation is
     # here so that the script will run successfully regardless of the
     # current working directory.
-
 
     #os.environ["PATH"] += os.pathsep + 'C:/Program Files (x86)/Graphviz2.38/bin/'
 
